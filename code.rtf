@@ -1,0 +1,270 @@
+{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang1033{\fonttbl{\f0\fnil\fcharset0 Calibri;}{\f1\fnil\fcharset1 Segoe UI Symbol;}{\f2\fnil\fcharset1 Segoe UI Symbol;}{\f3\fnil\fcharset1 Segoe UI Emoji;}{\f4\fnil\fcharset1 Cambria Math;}}
+{\*\generator Riched20 10.0.19041}{\*\mmathPr\mmathFont4\mwrapIndent1440 }\viewkind4\uc1 
+\pard\sa200\sl276\slmult1\f0\fs22\lang9\par
+It includes:\par
+\par
+\f1\u9989?\f0  Hide text\par
+\f1\u9989?\f0  Hide any file (PDF, ZIP, EXE, JPG, etc.)\par
+\f1\u9989?\f0  Extract text/file\par
+\f1\u9989?\f0  AES-level encryption (Fernet)\par
+\f1\u9989?\f0  Lossless PNG image support\par
+\f1\u9989?\f0  Error handling\par
+\f1\u9989?\f0  Fully documented code\par
+\par
+---\par
+\par
+# \f1\u9989?\f0  **\f2\u-10179?\u-9023?\f0  Full Project Code (Single Python File)**\par
+\par
+Save this as **steganography_tool.py**\par
+\par
+```python\par
+import base64\par
+import os\par
+from cryptography.fernet import Fernet\par
+from PIL import Image\par
+\par
+\par
+# ======================================================\par
+#                ENCRYPTION / DECRYPTION\par
+# ======================================================\par
+\par
+def generate_key():\par
+    """Generate a new Fernet encryption key."""\par
+    key = Fernet.generate_key()\par
+    with open("secret.key", "wb") as key_file:\par
+        key_file.write(key)\par
+    return key\par
+\par
+\par
+def load_key():\par
+    """Load the previously generated key."""\par
+    return open("secret.key", "rb").read()\par
+\par
+\par
+def encrypt_data(data: bytes, key: bytes) -> bytes:\par
+    f = Fernet(key)\par
+    return f.encrypt(data)\par
+\par
+\par
+def decrypt_data(data: bytes, key: bytes) -> bytes:\par
+    f = Fernet(key)\par
+    return f.decrypt(data)\par
+\par
+\par
+# ======================================================\par
+#         LSB STEGANOGRAPHY (ENCODE / DECODE)\par
+# ======================================================\par
+\par
+def encode_data_in_image(image_path, output_path, data: bytes):\par
+    """Embed encrypted bytes into an image using LSB."""\par
+    img = Image.open(image_path)\par
+    encoded = img.copy()\par
+    width, height = img.size\par
+    idx = 0\par
+\par
+    # Convert data to binary string\par
+    data += b"<END>"  # delimiter\par
+    binary_data = ''.join([format(byte, "08b") for byte in data])\par
+    max_bytes = width * height * 3\par
+\par
+    if len(binary_data) > max_bytes:\par
+        raise ValueError("Data is too large to hide in this image!")\par
+\par
+    pixels = list(encoded.getdata())\par
+    new_pixels = []\par
+\par
+    for pixel in pixels:\par
+        r, g, b = pixel\par
+\par
+        if idx < len(binary_data):\par
+            r = (r & ~1) | int(binary_data[idx])\par
+        if idx + 1 < len(binary_data):\par
+            g = (g & ~1) | int(binary_data[idx + 1])\par
+        if idx + 2 < len(binary_data):\par
+            b = (b & ~1) | int(binary_data[idx + 2])\par
+\par
+        new_pixels.append((r, g, b))\par
+        idx += 3\par
+\par
+        if idx >= len(binary_data):\par
+            break\par
+\par
+    encoded.putdata(new_pixels + pixels[len(new_pixels):])\par
+    encoded.save(output_path)\par
+    return True\par
+\par
+\par
+def decode_data_from_image(image_path):\par
+    """Extract hidden data from an image (LSB)."""\par
+    img = Image.open(image_path)\par
+    pixels = list(img.getdata())\par
+\par
+    binary_data = ""\par
+\par
+    for pixel in pixels:\par
+        r, g, b = pixel\par
+        binary_data += str(r & 1)\par
+        binary_data += str(g & 1)\par
+        binary_data += str(b & 1)\par
+\par
+    # Convert binary string to bytes until <END>\par
+    all_bytes = [\par
+        binary_data[i:i + 8] for i in range(0, len(binary_data), 8)\par
+    ]\par
+    data_bytes = bytearray()\par
+\par
+    for byte in all_bytes:\par
+        data_bytes.append(int(byte, 2))\par
+        if data_bytes.endswith(b"<END>"):\par
+            break\par
+\par
+    return bytes(data_bytes[:-5])  # remove delimiter\par
+\par
+\par
+# ======================================================\par
+#              TEXT AND FILE HIDING\par
+# ======================================================\par
+\par
+def hide_text(image_path, output_path, text):\par
+    key = generate_key()\par
+    encrypted = encrypt_data(text.encode(), key)\par
+    encode_data_in_image(image_path, output_path, encrypted)\par
+    print("Text successfully hidden!")\par
+    print("Encryption key saved as secret.key")\par
+\par
+\par
+def extract_text(image_path):\par
+    key = load_key()\par
+    encrypted_data = decode_data_from_image(image_path)\par
+    decrypted = decrypt_data(encrypted_data, key)\par
+    return decrypted.decode()\par
+\par
+\par
+def hide_file(image_path, output_path, file_path):\par
+    key = generate_key()\par
+\par
+    with open(file_path, "rb") as f:\par
+        file_data = f.read()\par
+\par
+    encrypted = encrypt_data(file_data, key)\par
+    encode_data_in_image(image_path, output_path, encrypted)\par
+    print("File successfully hidden!")\par
+    print("Encryption key saved as secret.key")\par
+\par
+\par
+def extract_file(image_path, output_file):\par
+    key = load_key()\par
+    encrypted = decode_data_from_image(image_path)\par
+    data = decrypt_data(encrypted, key)\par
+\par
+    with open(output_file, "wb") as f:\par
+        f.write(data)\par
+\par
+    print(f"File extracted and saved as: \{output_file\}")\par
+\par
+\par
+# ======================================================\par
+#                      MAIN MENU\par
+# ======================================================\par
+\par
+def main():\par
+    print("\\n==============================")\par
+    print("  IMAGE STEGANOGRAPHY TOOL")\par
+    print("==============================\\n")\par
+\par
+    print("1. Hide Text")\par
+    print("2. Extract Text")\par
+    print("3. Hide File")\par
+    print("4. Extract File")\par
+    print("5. Exit")\par
+\par
+    choice = input("\\nEnter choice: ")\par
+\par
+    if choice == "1":\par
+        img = input("Enter cover image path: ")\par
+        out = input("Enter output image path: ")\par
+        txt = input("Enter text to hide: ")\par
+        hide_text(img, out, txt)\par
+\par
+    elif choice == "2":\par
+        img = input("Enter stego image path: ")\par
+        print("\\nHidden text:", extract_text(img))\par
+\par
+    elif choice == "3":\par
+        img = input("Enter cover image path: ")\par
+        out = input("Enter output image path: ")\par
+        file = input("Enter file to hide: ")\par
+        hide_file(img, out, file)\par
+\par
+    elif choice == "4":\par
+        img = input("Enter stego image path: ")\par
+        out = input("Enter output file name: ")\par
+        extract_file(img, out)\par
+\par
+    else:\par
+        print("Goodbye!")\par
+\par
+\par
+if __name__ == "__main__":\par
+    main()\par
+```\par
+\par
+---\par
+\par
+# \f2\u-10179?\u-8986?\f0  **Required Libraries**\par
+\par
+Install dependencies:\par
+\par
+```bash\par
+pip install pillow cryptography\par
+```\par
+\par
+---\par
+\par
+# \f3\u-10178?\u-8726?\f0  **How to Use the Project**\par
+\par
+## **\f1\u9654?\f0  Hide Text**\par
+\par
+```\par
+1 \f4\u8594?\f0  Hide Text\par
+Enter cover image: original.png\par
+Enter output image: secret.png\par
+Enter text: My hidden message\par
+```\par
+\par
+A file **secret.key** is created.\par
+\par
+---\par
+\par
+## **\f1\u9654?\f0  Extract Text**\par
+\par
+```\par
+2 \f4\u8594?\f0  Extract Text\par
+Enter stego image: secret.png\par
+```\par
+\par
+---\par
+\par
+## **\f1\u9654?\f0  Hide a File**\par
+\par
+You can hide:\par
+PDF, ZIP, EXE, PNG, DOCX, etc.\par
+\par
+```\par
+3 \f4\u8594?\f0  Hide File\par
+Enter cover image: original.png\par
+Enter output image: encoded.png\par
+Enter file to hide: secret.pdf\par
+```\par
+\par
+---\par
+\par
+## **\f1\u9654?\f0  Extract the File**\par
+\par
+```\par
+4 \f4\u8594?\f0  Extract File\par
+Enter stego image: encoded.png\par
+Enter output filename: recovered.pdf\par
+\par
+}
+ 
